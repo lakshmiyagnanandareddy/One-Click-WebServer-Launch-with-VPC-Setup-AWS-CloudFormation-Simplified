@@ -1,0 +1,118 @@
+Parameters:
+  InstaType:
+    Type : String
+    Description: Enter the instance type from this list [t2.micro, m1.small, m1.large] for WebServer.
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - m1.small
+      - m1.large
+  
+Resources:
+# Creating of VPC
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: "true"
+      EnableDnsSupport: "true"
+      Tags:
+        - Key: Name
+          Value: VPC_CF
+
+# Creating of subnet
+  Subnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: Vpc
+      AvailabilityZone: !Select [  0, !GetAZs ]
+      CidrBlock: "10.0.1.0/24"
+      Tags:
+        - Key: Name
+          Value: Subnet_A
+
+# Creating Route table
+  RouteTableSubnetA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: RT_Subnet_A
+
+# Associating Route table to subnet
+  RouteTableSubnetAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTableSubnetA
+      SubnetId: !Ref Subnet
+
+# Creating InternetGateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Cf_IgW
+
+# Attaching InternetGateway to VPC
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref Vpc
+
+# Associating InternetGateway to Router
+  CreateRouteTable:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTableSubnetA
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+# Creating Security Group
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http for Webserver and allow all traffic for Outbound traffic
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: SG_EC2_CF
+
+# Creating EC2 Instance which having WebServer
+  InstanceCreation:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-023c11a32b0207432
+      InstanceType: !Ref InstaType
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          SubnetId: !Ref Subnet
+          GroupSet:
+          - !Ref EC2SecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 10
+      UserData: 
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash
+            sudo yum install httpd net-tools php -y
+            echo '<pre> <?php print "<h1> Lakshmi reddys Webserver </h1><br>"; print`/usr/sbin/ifconfig`;  ?>  </pre>' > /var/www/html/index.php
+            systemctl start httpd --now
+      Tags:
+        - Key: Name
+          Value: WebServer
+
